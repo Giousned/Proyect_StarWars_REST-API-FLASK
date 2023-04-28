@@ -76,7 +76,7 @@ class People(db.Model):
         return{
             "id": self.id,
             "name":self.name,
-            "birth_day":self.birth_date,
+            "birth_date":self.birth_date,
             "description":self.description,
             "planet": self.planet.serialize_planet(),
             "eye_color":self.eye_color,
