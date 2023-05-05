@@ -2,21 +2,13 @@
 This module takes care of starting the API Server, Loading the DB and Adding the endpoints
 """
 import os
-# INSTALAR MODULO REQUESTS PARA PODER HACER PETICIONES A API, COMO FETCH EN JS
-# python3 -m pip install requests
-# LO NECESITO DESPUES DE INSTALAR EL MODULO REQUESTS PARA IMPORTARLO
-import sys
-sys.path.append("/home/gitpod/.pyenv/versions/3.10.7/lib/python3.10/site-packages")
-import requests
-
 from flask import Flask, request, jsonify, url_for
 from flask_migrate import Migrate
 from flask_swagger import swagger
 from flask_cors import CORS
 from utils import APIException, generate_sitemap
 from admin import setup_admin
-from models import db, User
-from models import People, Planet, Vehicles, Favorites
+from models import db, User, People, Planet, Vehicles, Favorites
 
 app = Flask(__name__)
 app.url_map.strict_slashes = False
@@ -33,6 +25,7 @@ db.init_app(app)
 CORS(app)
 setup_admin(app)
 
+
 # Handle/serialize errors like a JSON object
 @app.errorhandler(APIException)
 def handle_invalid_usage(error):
@@ -43,178 +36,179 @@ def handle_invalid_usage(error):
 def sitemap():
     return generate_sitemap(app)
 
-@app.route('/people', methods=['GET'])
-def get_peoples():
-
-    url = 'https://www.swapi.tech/api/people'
-    headers = {"Content-Type": "application/json"}
-    response = requests.get(url)
-
-    response_body = response.json()
-
-    return jsonify(response_body["results"]), 200
-
-@app.route('/people/<int:people_id>', methods=['GET'])
-def get_one_people(people_id):
-
-    url = 'https://www.swapi.tech/api/people/'+str(people_id)       #  NO SE HACERLO CON /people/{people_id}
-    headers = {"Content-Type": "application/json"}
-    response = requests.get(url)
-
-    response_body = response.json()
-
-    return jsonify(response_body["result"]), 200
-
-@app.route('/planets', methods=['GET'])
-def get_planets():
-
-    url = 'https://www.swapi.tech/api/planets'
-    headers = {"Content-Type": "application/json"}
-    response = requests.get(url)
-
-    response_body = response.json()
-
-    return jsonify(response_body["results"]), 200
-
-@app.route('/planets/<int:planet_id>', methods=['GET'])
-def get_one_planet(planet_id):
-
-    url = 'https://www.swapi.tech/api/planets/'+str(planet_id)
-    headers = {"Content-Type": "application/json"}
-    response = requests.get(url)
-
-    response_body = response.json()
-
-    return jsonify(response_body["result"]), 200
-
-@app.route('/vehicles', methods=['GET'])
-def get_vehicles():
-
-    url = 'https://www.swapi.tech/api/vehicles'
-    headers = {"Content-Type": "application/json"}
-    response = requests.get(url)
-
-    response_body = response.json()
-
-    return jsonify(response_body["results"]), 200
-
-@app.route('/vehicles/<int:vehicle_id>', methods=['GET'])
-def get_one_vehicle(vehicle_id):
-
-    url = 'https://www.swapi.tech/api/vehicles/'+str(vehicle_id)
-    headers = {"Content-Type": "application/json"}
-    response = requests.get(url)
-
-    response_body = response.json()
-
-    return jsonify(response_body["result"]), 200
-
-@app.route('/starships', methods=['GET'])
-def get_starships():
-
-    url = 'https://www.swapi.tech/api/starships'
-    headers = {"Content-Type": "application/json"}
-    response = requests.get(url)
-
-    response_body = response.json()
-
-    return jsonify(response_body["results"]), 200
-
-@app.route('/starships/<int:starship_id>', methods=['GET'])
-def get_one_starship(starship_id):
-
-    url = 'https://www.swapi.tech/api/starships/'+str(starship_id)
-    headers = {"Content-Type": "application/json"}
-    response = requests.get(url)
-
-    response_body = response.json()
-
-    return jsonify(response_body["result"]), 200
-
-@app.route('/species', methods=['GET'])
-def get_species():
-
-    url = 'https://www.swapi.tech/api/species'
-    headers = {"Content-Type": "application/json"}
-    response = requests.get(url)
-
-    response_body = response.json()
-
-    return jsonify(response_body["results"]), 200
-
-@app.route('/species/<int:specie_id>', methods=['GET'])
-def get_one_specie(specie_id):
-
-    url = 'https://www.swapi.tech/api/species/'+str(specie_id)
-    headers = {"Content-Type": "application/json"}
-    response = requests.get(url)
-
-    response_body = response.json()
-
-    return jsonify(response_body["result"]), 200
 
 
-##########
-# ADICIONALMENTE: USER:
-@app.route('/users', methods=['GET'])
-def get_users():
+# MIS RUTAS
+@app.route('/user', methods = ['GET'])            # app es nuestro flask, entre '' nombre d la ruta q voy ha llamar 
+def get_users():                                # declarar func cn nombre descriptivo
+    all_users=User.query.all()                  # crear var q cntiene info cn la q va a trabajar mi ruta ///
+    all_users=list(map(lambda user:user.serialize(), all_users))  # mapeas all info that user return 
 
-    response_body = {
-        "msg": "Hello, this is your GET /user response "
-    }
+    return jsonify(all_users),200
 
-    return jsonify(response_body), 200
+@app.route('/user/<int:id>', methods = ['GET'])    
+def get_user_by_id(id):
+    user=User.query.get(id)
 
-@app.route('/users/favorites', methods=['GET'])
-def get_user_favorites():
+    return jsonify(user.serialize()),200
 
-    response_body = {
-        "msg": "Hello, this is your GET /user response "
-    }
+@app.route('/user', methods = ['POST'])
+def create_user():
+    data=request.get_json()
+    new_user= User(data['email'], data['user_name'], data['first_name'], data['last_name'], data['password'])
+    db.session.add(new_user)
+    db.session.commit()
 
-    return jsonify(response_body), 200
+    return jsonify(new_user.serialize()),200
 
-@app.route('/favorite/planet/<int:planet_id>', methods=['POST'])
-def post_planet_favorite():
+@app.route('/user/<int:id>',methods=['DELETE'])
+def delete_user(id):
+    user=User.query.get(id).first()
+    db.session.remove(user)
+    db.session.commit()
+    return jsonify(user.serialize()),201
 
-    response_body = {
-        "msg": "Hello, this is your GET /user response "
-    }
+@app.route('/people',methods=['GET'])
+def  get_people():
+     all_people=People.query.all()
+     all_people=list(map(lambda people:people.serialize(), all_people))
 
-    return jsonify(response_body), 200
+     return jsonify(all_people),200
 
-@app.route('/favorite/people/<int:people_id>', methods=['POST'])
-def post_people_favorite():
+@app.route('/people/<int:id>', methods=['DELETE'])
+def delete_people(id):
+    character=People.query.get(id).first()
+    db.session.remove(character)
+    db.session.commit()
+    return jsonify(character.serialize()), 201
 
-    response_body = {
-        "msg": "Hello, this is your GET /user response "
-    }
+@app.route('/people', methods=['POST'])
+def create_people():
+    data=request.get_json()
+    new_people= People(data['name'], data['birth_date'], data ['description'], data ['eye_color'], data ['hair_color'])
+    db.session.add(new_people)
+    db.session.commit()
 
-    return jsonify(response_body), 200
+    return jsonify(people.serialize()),200
 
-@app.route('/favorite/planet/<int:planet_id>', methods=['DELETE'])
-def delete_planet_favorite():
 
-    response_body = {
-        "msg": "Hello, this is your GET /user response "
-    }
+@app.route('/people/<int:id>',methods=['GET']) 
+def get_people_by_id(id):
+    people=People.query.get(id)
 
-    return jsonify(response_body), 200
+    return jsonify(people.serialize()),200    
 
-@app.route('/favorite/people/<int:people_id>', methods=['DELETE'])
-def delete_people_favorite():
+@app.route('/planet', methods= ['GET'])
+def get_planet():
+    all_planet=Planet.query.all() 
+    all_planet=list(map(lambda planet:planet.serialize(), all_planet))  
 
-    response_body = {
-        "msg": "Hello, this is your GET /user response "
-    }
+    return jsonify(all_planet),200
 
-    return jsonify(response_body), 200
+@app.route('/planet/<int:id>',methods=['DELETE'])
+def delete_planet(id):
+    planet=planet.query.get(id).first()
+    db.session.remove(planet)
+    db.session.commit()
+
+    return jsonify(planet.serialize()),201
+
+
+@app.route('/planet',methods=['POST'])
+def create_planet():
+    data=request.get_json()
+    new_planet= Planet(data['description'], data['name'], data['population'], data['terrain'], data['climate'])
+    db.session.add(new_planet)
+    db.session.commit()
+
+    return jsonify(new_planet.serialize()),200    
+
+
+@app.route('/planet/<int:id>',methods=['GET'])
+def get_planet_by_id(id):
+    planet:Planet.query.get(id)
+
+    return jsonify(planet.serialize()),200    
+
+@app.route('/vehicle', methods= ['GET'])
+def get_vehicle():
+    all_vehicle=Vehicle.query.all()
+    all_vehicle=list(map(lambda vehicle:vehicle.serialize(), all_vehicle))
+
+    return jsonify(all_vehicle),200
+
+
+@app.route('/vehicle/<int:id>',methods=['DELETE'])
+def delete_vehicle(id):
+    vehicle=vehicle.query.get(id).first()
+    db.session.remove(vehicle)
+    db.session.commit()
+
+    return jsonify(vehicle.serialize()),201
+
+
+@app.route('/vehicle',methods=['POST'])
+def create_vehicle():
+    data=request.get_json()
+    new_vehicle= User(data['model'], data['name'], data['description'], data['pilot'] )
+    db.session.add(new_vehicle)
+    db.session.commit()
+
+    return jsonify(new_vehicle.serialize()),200    
+
+@app.route('/vehicle/<int:id>',methods=['GET'])
+def get_vehicle_by_id(id):
+    vehicle:Vehicle.query.get(id)
+
+    return jsonify(vehicle.serialize()),200   
+
+
+@app.route('/favorite', methods= ['GET'])
+def get_favorite():
+    all_favorite=Favorite.query.all()
+    all_favorite=list(map(lambda favorite:favorite.serialize(),all_favorite))
+
+    return jsonify(all_favorite),200
+
+@app.route('/favorite/people', methods=['POST'])
+def new_favorite_people():
+    data=request.get_json()
+    new_favorite= People(data['name'],data ['birth_date'], data['description'] ,data['eye_color'] ,data ['hair_color'])
+    db.session.add(new_favorite)
+    db.session.commit()
+
+    return jsonify(new_favorite.serialize()),200
+
+@app.route('/favorite/planet', methods=['POST'])
+def new_favorite_planet():
+    data=request.get_json()
+    new_favorite= Planet(data['name'],data ['population'], data['description'] ,data['terrain'] ,data ['climate'])
+    db.session.add(new_favorite)
+    db.session.commit()
+
+    return jsonify(new_favorite.serialize()),200
+
+@app.route('/favorite/vehicle', methods=['POST'])
+def new_favorite_vehicle():
+    data=request.get_json()
+    new_favorite= Vehicle(data['name'],data ['model'], data['description'] ,data['pilot'])
+    db.session.add(new_favorite)
+    db.session.commit()
+
+    return jsonify(new_favorite.serialize()),200
+
+
+@app.route('/favorite/<int:id>',methods=['DELETE'])
+def delete_favorite(id):
+    favorite=favorite.query.get(id).first()
+    db.sessionremove(id)
+    db.session.commit()
+
+    return jsonify(favorite.serialize()),201
 
 
 # this only runs if `$ python src/app.py` is executed
 if __name__ == '__main__':
     PORT = int(os.environ.get('PORT', 3000))
     app.run(host='0.0.0.0', port=PORT, debug=False)
-
-
 
