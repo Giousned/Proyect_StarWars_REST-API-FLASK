@@ -10,8 +10,8 @@ class User(db.Model):
     password = db.Column(db.String(80), unique=False, nullable=False)
     is_active = db.Column(db.Boolean(), unique=False, nullable=False)
 
-    user_name = db.Column(db.String(40),nullable=False)
-    last_name = db.Column(db.String(50),nullable=False)
+    user_name = db.Column(db.String(40), nullable=False)
+    last_name = db.Column(db.String(50), nullable=False)
     register_data = db.Column(db.DateTime, default = datetime.datetime.utcnow) # CONSULTAR 
 
     favorites = db.relationship("Favorites", back_populates = 'user')    # relacion entre clases  1 a N = multiples favoritos,
@@ -26,7 +26,7 @@ class User(db.Model):
         self.last_name = last_name
         self.password = password   
         self.is_active = True  
-        # self.favorites = favorites.serialize() CONSULTAR
+        self.favorites = favorites.serialize_favs_user()
         
 
     def serialize(self):  #transformo a diccionario  los datos para ver una respuesta JSON /enviar a JSON
@@ -35,7 +35,7 @@ class User(db.Model):
             "email": self.email,
             "user_name":self.user_name,
             "last_name":self.last_name,
-            "favorites": list(map(lambda favorite: favorite.serialize(), self.favorites))
+            "favorites": list(map(lambda favorite: favorite.serialize_favs_user(), self.favorites))
             # do not serialize the password, its a security breach
         }
     
@@ -59,8 +59,8 @@ class People(db.Model):
     planet_id = db.Column(db.Integer, db.ForeignKey("Planet.id")) #relacion de tabla.id
 
     planet = db.relationship("Planet", back_populates = 'people') #relacion entre clases 
-    favorites = db.relationship("Favorites", back_populates = 'favorites')
     vehicle = db.relationship("Vehicle", back_populates = 'people')
+    favorites = db.relationship("Favorites", back_populates = 'people')
 
 
     def __repr__(self):
@@ -97,11 +97,11 @@ class Planet(db.Model):
     id = db.Column(db.Integer,primary_key=True)
     name = db.Column(db.String(120), unique=True, nullable=False)
     description = db.Column(db.String(120), unique=True, nullable=False)
-    population = db.Column(db.Integer)
+    population = db.Column(db.Integer, unique=True, nullable=False)
     terrain = db.Column(db.String(120), unique=True, nullable=False)
     climate = db.Column(db.String(120), unique=True, nullable=False)
 
-    favorites = db.relationship("Favorites", back_populates = 'favorites')
+    favorites = db.relationship("Favorites", back_populates = 'planet')
     people = db.relationship("People", back_populates = 'planet')
 
     def __repr__(self):
@@ -128,7 +128,7 @@ class Planet(db.Model):
         return {
           "id": self.id,
           "name":self.name,
-          "descirption":self.description,
+          "description":self.description,
           "population":self.population,
         }
 
@@ -143,10 +143,10 @@ class Vehicle(db.Model):
     pilots =  db.Column(db.Integer, db.ForeignKey("People.id")) 
 
     people = db.relationship("People", back_populates = 'vehicle')
-    favorites = db.relationship("Favorites", back_populates = 'vehicles')
+    favorites = db.relationship("Favorites", back_populates = 'vehicle')
 
     def __repr__(self):
-        return '<Vehicles %r>' % self.name
+        return '<Vehicle %r>' % self.name
 
     def __init__(self, name, description, model, pilots):
         self.name = name
@@ -200,10 +200,10 @@ class Favorites(db.Model):
          "vehicles_id":self.vehicles_id
         }
     
-    # def serialize_favs_user(self):
-    #   return {
-    #      "id":self.id,
-    #      "people_id":self.people_id,
-    #      "planet_id":self.planets_id,
-    #      "vehicles_id":self.vehicles_id
-    #     }
+    def serialize_favs_user(self):
+      return {
+         "id":self.id,
+         "people_id":self.people_id,
+         "planet_id":self.planets_id,
+         "vehicles_id":self.vehicles_id
+        }

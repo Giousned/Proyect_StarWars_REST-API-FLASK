@@ -8,7 +8,11 @@ from flask_swagger import swagger
 from flask_cors import CORS
 from utils import APIException, generate_sitemap
 from admin import setup_admin
-from models import db, User, People, Planet, Vehicles, Favorites
+from flask_jwt_extended import create_access_token
+from flask_jwt_extended import get_jwt_identity
+from flask_jwt_extended import jwt_required
+from flask_jwt_extended import JWTManager
+from models import db, User, People, Planet, Vehicle, Favorites
 
 app = Flask(__name__)
 app.url_map.strict_slashes = False
@@ -17,8 +21,11 @@ db_url = os.getenv("DATABASE_URL")
 if db_url is not None:
     app.config['SQLALCHEMY_DATABASE_URI'] = db_url.replace("postgres://", "postgresql://")
 else:
-    app.config['SQLALCHEMY_DATABASE_URI'] = "sqlite:////tmp/test.db"
+    app.config['SQLALCHEMY_DATABASE_URI'] = "sqlite:///tmp/test.db"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+app.config["JWT_SECRET_KEY"] = "[}{*Super_Secreto_Holi-jeJE.*/*]"           # ¡Cambia las palabras "super-secret" por otra cosa!
+jwt = JWTManager(app)
 
 MIGRATE = Migrate(app, db)
 db.init_app(app)
@@ -38,178 +45,438 @@ def sitemap():
 
 
 
+######################################################
 # MIS RUTAS
-@app.route('/user', methods = ['GET'])            # app es nuestro flask, entre '' nombre d la ruta q voy ha llamar 
-def get_users():                                # declarar func cn nombre descriptivo
-    all_users=User.query.all()                  # crear var q cntiene info cn la q va a trabajar mi ruta ///
-    all_users=list(map(lambda user:user.serialize(), all_users))  # mapeas all info that user return 
 
-    return jsonify(all_users),200
 
-@app.route('/user/<int:id>', methods = ['GET'])    
-def get_user_by_id(id):
-    user=User.query.get(id)
 
-    return jsonify(user.serialize()),200
+# PERSONAJES
+@app.route("/people", methods=["GET"])
+def get_peoples():
 
-@app.route('/user', methods = ['POST'])
-def create_user():
-    data=request.get_json()
-    new_user= User(data['email'], data['user_name'], data['first_name'], data['last_name'], data['password'])
-    db.session.add(new_user)
-    db.session.commit()
+    try:
+        
+        # Obtener personajes de la base de datos
+        query = db.select(People).order_by(People.id)
+        peoples = db.session.execute(query).scalars()
 
-    return jsonify(new_user.serialize()),200
+        peoples_list = [people.serialize() for people in peoples]
 
-@app.route('/user/<int:id>',methods=['DELETE'])
-def delete_user(id):
-    user=User.query.get(id).first()
-    db.session.remove(user)
-    db.session.commit()
-    return jsonify(user.serialize()),201
+        # OTRA FORMA DE HACER Y OBTENER LOS PERSONAJES
+        #  peoples=People.query.all()
+        #  peoples=list(map(lambda people:people.serialize(), peoples))
+        #  return jsonify(peoples),200
 
-@app.route('/people',methods=['GET'])
-def  get_people():
-     all_people=People.query.all()
-     all_people=list(map(lambda people:people.serialize(), all_people))
+        return {"code": 200, "msg": "Personajes existentes obtenidos", "peoples": peoples_list}
 
-     return jsonify(all_people),200
+    except Exception as error:
+        print(error)
+        return {"code": 500, "msg": "¡Error en el servidor, algo fue mal!"}
 
-@app.route('/people/<int:id>', methods=['DELETE'])
-def delete_people(id):
-    character=People.query.get(id).first()
-    db.session.remove(character)
-    db.session.commit()
-    return jsonify(character.serialize()), 201
 
+@app.route("/people/<int:id>", methods=["GET"])
+def get_people(id):
+
+    try:
+    
+        # Obtener personaje de la base de datos
+        people = db.get_or_404(People, id)
+        # people = db.session.execute(db.select(People).filter_by(id)).scalars().one()
+
+        # OTRA FORMA DE HACER Y OBTENER EL PERSONAJE  
+        # people=People.query.get(id)
+        # return jsonify(people.serialize()),200  
+        
+        return {"code": 200, "msg": "Personaje requerido por id obtenido", "people": people.serialize()}
+
+    except Exception as error:
+        print(error)
+        return {"code": 500, "msg": "¡Error en el servidor, algo fue mal!"}
+
+
+# PLANETAS
+@app.route("/planet", methods=["GET"])
+def get_planets():
+
+    try:
+        
+        # Obtener planetas de la base de datos
+        query = db.select(Planet).order_by(Planet.id)
+        planets = db.session.execute(query).scalars()
+
+        planets_list = [planet.serialize() for planet in planets]
+
+        return {"code": 200, "msg": "Planetas existentes obtenidos", "planets": planets_list}
+
+    except Exception as error:
+        print(error)
+        return {"code": 500, "msg": "¡Error en el servidor, algo fue mal!"}
+
+
+@app.route("/planet/<int:id>", methods=["GET"])
+def get_planet(id):
+
+    try:
+    
+        # Obtener planeta de la base de datos
+        planet = db.get_or_404(Planet, id)
+        # planet = db.session.execute(db.select(Planet).filter_by(id)).scalars().one()
+        
+        return {"code": 200, "msg": "Planeta requerido por id obtenido", "planet": planet.serialize()}
+
+    except Exception as error:
+        print(error)
+        return {"code": 500, "msg": "¡Error en el servidor, algo fue mal!"}
+
+
+# USUARIOS
+@app.route("/users", methods=["GET"])
+def get_users():
+
+    try:
+        
+        # Obtener usuarios de la base de datos
+        query = db.select(User).order_by(User.id)
+        users = db.session.execute(query).scalars()
+
+        users_list = [user.serialize() for user in users]
+
+        return {"code": 200, "msg": "Usuarios existentes obtenidos", "users": users_list}
+
+    except Exception as error:
+        print(error)
+        return {"code": 500, "msg": "¡Error en el servidor, algo fue mal!"}
+
+
+# FAVORITOS DE UN USUARIO
+@app.route("/users/favorites", methods=["GET"])
+@jwt_required()
+def get_users_favs():
+
+    try:
+
+        sub_token = get_jwt_identity()
+        user_id = sub_token["id"]
+        
+        query = db.select(Favorites).filter_by(user_id).order_by(Favorites.id)
+        favorites = db.session.execute(query).scalars()
+
+        favorites_list = [favorites.serialize_favs_user() for favorites in favorites]
+
+        return {"code": 200, "msg": "Favoritos existentes del usuario actual obtenidos", "favorites": favorites_list}
+
+    except Exception as error:
+        print(error)
+        return {"code": 500, "msg": "¡Error en el servidor, algo fue mal!"}
+
+
+# CREAR PLANETA FAVORITO A UN USUARIO
+@app.route('/favorite/planet/<int:planet_id>', methods=['POST'])
+def create_planet_fav(planet_id):
+
+    try:
+    
+        body = request.json
+        # OTRA FORMA
+        # data=request.get_json()
+
+        new_planet_fav= Planet(
+            body['name'],
+            body['description'],
+            body['population'],
+            body['terrain'],
+            body['climate'],
+            planets_id = planet_id)
+
+        db.session.add(new_planet_fav)
+        db.session.commit()
+
+        return {"code": 200, "msg": "¡Usuario creado correctamente!", "planet_fav": new_planet_fav.serialize() }
+                # OTRA FORMA: jsonify(new_planet_fav.serialize()),200
+
+    except Exception as error:
+        print(error)
+        return {"code": 500, "msg": "¡Error en el servidor, algo fue mal!"}
+
+
+
+# CREAR PERSONAJE FAVORITO A UN USUARIO
+@app.route('/favorite/people/<int:people_id>', methods=['POST'])
+def create_people_fav(people_id):
+
+    try:
+    
+        body = request.json
+
+        # SI QUEREMOS COMPROBAR QUE LLEGA TODA LA INFORMACION REQUERIDA EN EL BODY
+        # claves_people = body.keys()
+
+        # if not "name" in claves_people or not "birth_date" in claves_people or not "description" in claves_people or not "eye_color" in claves_people or not "hair_color" in claves_people:        
+        #     return {"code": 400, "msg": "¡Información recibida en el Back insuficiente, falta información!"}
+
+        new_people_fav= People(
+            data['name'],
+            data['birth_date'],
+            data ['description'],
+            data ['eye_color'],
+            data ['hair_color'],
+            peoples_id = people_id)
+
+        db.session.add(new_people_fav)
+        db.session.commit()
+
+        return {"code": 200, "msg": "¡Usuario creado correctamente!", "people_fav": new_people_fav.serialize() }
+
+    except Exception as error:
+        print(error)
+        return {"code": 500, "msg": "¡Error en el servidor, algo fue mal!"}
+
+
+
+# ELIMINAR PLANETA FAVORITO POR ID
+@app.route('/favorite/planet/<int:planet_id>', methods=['DELETE'])
+def delete_planet_fav(planet_id):
+
+    try:
+    
+        # Obtener usuarios de la base de datos
+        planet_fav = db.get_or_404(Favorites, planet_id)
+
+        db.session.delete(planet_fav)
+        db.session.commit()
+
+        # OTRA FORMA
+        # planet_fav=Favorites.query.get(planet_id).first()
+        # db.session.remove(planet_fav)
+
+
+        # SI DESPUES NECESITAMOS UNA LISTA COMPLETA ACTUALIZADA
+        # query = db.select(Favorites).order_by(Favorites.id)                 
+        # favorites = db.session.execute(query).scalars()
+
+
+        return {"code": 200, "msg": "¡Planeta favorito eliminado correctamente!"}
+
+    except Exception as error:
+        print(error)
+        return {"code": 500, "msg": "¡Error en el servidor, algo fue mal!"}
+
+
+# ELIMINAR PERSONAJE FAVORITO POR ID
+@app.route('/favorite/people/<int:people_id>', methods=['DELETE'])
+def delete_people_fav(people_id):
+
+    try:
+    
+        # Obtener usuarios de la base de datos
+        people_fav = db.get_or_404(Favorites, people_id)
+
+        db.session.delete(people_fav)
+        db.session.commit()
+
+        return {"code": 200, "msg": "¡Personaje favorito eliminado correctamente!"}
+
+    except Exception as error:
+        print(error)
+        return {"code": 500, "msg": "¡Error en el servidor, algo fue mal!"}
+
+
+#########################################################################################
+
+
+#########################
+# EXTRA, NO OBLIGATORIO #
+#########################
+
+# CREAR PLANETA
+@app.route('/planet', methods=['POST'])
+def create_planet():
+
+    try:
+    
+        body = request.json
+
+        new_planet= Planet(
+            body['name'],
+            body['description'],
+            body['population'],
+            body['terrain'],
+            body['climate'])
+
+        db.session.add(new_planet)
+        db.session.commit()
+
+        return {"code": 200, "msg": "¡Planeta creado correctamente!", "planet": new_planet.serialize() }
+
+    except Exception as error:
+        print(error)
+        return {"code": 500, "msg": "¡Error en el servidor, algo fue mal!"}
+
+
+# CREAR PERSONAJE
 @app.route('/people', methods=['POST'])
 def create_people():
-    data=request.get_json()
-    new_people= People(data['name'], data['birth_date'], data ['description'], data ['eye_color'], data ['hair_color'])
-    db.session.add(new_people)
-    db.session.commit()
 
-    return jsonify(people.serialize()),200
+    try:
+    
+        body = request.json
+
+        new_people= People(
+            data['name'],
+            data['birth_date'],
+            data ['description'],
+            data ['eye_color'],
+            data ['hair_color'])
+
+        db.session.add(new_people)
+        db.session.commit()
+
+        return {"code": 200, "msg": "¡Personaje creado correctamente!", "people": new_people.serialize() }
+
+    except Exception as error:
+        print(error)
+        return {"code": 500, "msg": "¡Error en el servidor, algo fue mal!"}
 
 
-@app.route('/people/<int:id>',methods=['GET']) 
-def get_people_by_id(id):
-    people=People.query.get(id)
 
-    return jsonify(people.serialize()),200    
+# ACTUALIZAR PLANETA
+@app.route('/planet/<int:id>', methods=['PUT'])
+def update_planet(id):
 
-@app.route('/planet', methods= ['GET'])
-def get_planet():
-    all_planet=Planet.query.all() 
-    all_planet=list(map(lambda planet:planet.serialize(), all_planet))  
+    try:
 
-    return jsonify(all_planet),200
+        planet = db.get_or_404(Planet, id)
+        
 
-@app.route('/planet/<int:id>',methods=['DELETE'])
+        body = request.json
+
+        claves_planet = body.keys()
+
+
+        planet.name = body['name']
+        planet.description = body['description']
+        planet.population = body['population']
+        planet.terrain = body['terrain']
+        planet.climate = body['climate']
+ 
+
+        db.session.commit()
+
+        return {"code": 200, "msg": "¡Datos del planeta actualizados correctamente!", "planet": planet.serialize()}
+
+    except Exception as error:
+        print(error)
+        return {"code": 500, "msg": "¡Error en el servidor, algo fue mal!"}
+
+
+# ELIMINAR PLANETA
+@app.route('/planet/<int:id>', methods=['DELETE'])
 def delete_planet(id):
-    planet=planet.query.get(id).first()
-    db.session.remove(planet)
-    db.session.commit()
 
-    return jsonify(planet.serialize()),201
+    try:
 
+        planet = db.get_or_404(Planet, id)
+    
 
-@app.route('/planet',methods=['POST'])
-def create_planet():
-    data=request.get_json()
-    new_planet= Planet(data['description'], data['name'], data['population'], data['terrain'], data['climate'])
-    db.session.add(new_planet)
-    db.session.commit()
+        db.session.delete(planet)
+        db.session.commit()
 
-    return jsonify(new_planet.serialize()),200    
+        return {"code": 200, "msg": "¡Planeta eliminado correctamente!"}
 
-
-@app.route('/planet/<int:id>',methods=['GET'])
-def get_planet_by_id(id):
-    planet:Planet.query.get(id)
-
-    return jsonify(planet.serialize()),200    
-
-@app.route('/vehicle', methods= ['GET'])
-def get_vehicle():
-    all_vehicle=Vehicle.query.all()
-    all_vehicle=list(map(lambda vehicle:vehicle.serialize(), all_vehicle))
-
-    return jsonify(all_vehicle),200
+    except Exception as error:
+        print(error)
+        return {"code": 500, "msg": "¡Error en el servidor, algo fue mal!"}
 
 
-@app.route('/vehicle/<int:id>',methods=['DELETE'])
-def delete_vehicle(id):
-    vehicle=vehicle.query.get(id).first()
-    db.session.remove(vehicle)
-    db.session.commit()
-
-    return jsonify(vehicle.serialize()),201
 
 
+# EJEMPLO DE UNA MISMA FUNCION/RUTA QUE ADMITE VARIOS METODOS JUNTOS
+# ACTUALIZAR O ELIMINAR PERSONAJE
+@app.route('/people/<int:id>', methods=["PUT","DELETE"])
+def put_or_delete_people(id):
+
+    try:
+
+        # Actualizar o borrar personajes de las tablas de la DB
+        if request.method == "PUT":
+            people = db.get_or_404(People, id)
+        
+            body = request.json
+            claves_people = body.keys()
+
+            people.name = body['name']
+            people.description = body['description']
+            people.population = body['population']
+            people.terrain = body['terrain']
+            people.climate = body['climate']
+    
+
+            db.session.commit()
+
+            return {"code": 200, "msg": "¡Datos del personaje actualizados correctamente!", "people": people.serialize()}
+
+
+
+        if request.method == "DELETE":
+            people = db.get_or_404(People, id)
+    
+            db.session.delete(people)
+            db.session.commit()
+
+            return {"code": 200, "msg": "¡Personaje eliminado correctamente!"}
+
+    except Exception as error:
+        print(error)
+        return jsonify(user_response), user_response["code"]
+
+
+
+
+
+#########################
+# MAS EXTRAS, EJEMPLOS  #
+#########################
+
+
+
+# EJEMPLOS DE FORMAS DE HACER FILTERS
+# users_carers_list = [user.serialize() for user in users if len(user.tariffs) != 0 ]
+# users_carers_list_without_me = [user for user in users_carers_list if user["id"] != user_id ]
+# users_carers_list = list(filter(lambda user.serialize(): len(user.tariffs) != 0, users_carers_list))
+
+
+
+
+# EJEMPLO PARA HACER LO MISMO CON LOS VEHICULOS Y LOS FAVORITOS DE LOS MISMOS
 @app.route('/vehicle',methods=['POST'])
 def create_vehicle():
-    data=request.get_json()
-    new_vehicle= User(data['model'], data['name'], data['description'], data['pilot'] )
+    data = request.get_json()
+
+    new_vehicle = User(data['model'], data['name'], data['description'], data['pilot'])
+
     db.session.add(new_vehicle)
     db.session.commit()
 
-    return jsonify(new_vehicle.serialize()),200    
+    return jsonify(new_vehicle.serialize()), 200    
 
-@app.route('/vehicle/<int:id>',methods=['GET'])
-def get_vehicle_by_id(id):
-    vehicle:Vehicle.query.get(id)
-
-    return jsonify(vehicle.serialize()),200   
-
-
-@app.route('/favorite', methods= ['GET'])
-def get_favorite():
-    all_favorite=Favorite.query.all()
-    all_favorite=list(map(lambda favorite:favorite.serialize(),all_favorite))
-
-    return jsonify(all_favorite),200
-
-@app.route('/favorite/people', methods=['POST'])
-def new_favorite_people():
-    data=request.get_json()
-    new_favorite= People(data['name'],data ['birth_date'], data['description'] ,data['eye_color'] ,data ['hair_color'])
-    db.session.add(new_favorite)
-    db.session.commit()
-
-    return jsonify(new_favorite.serialize()),200
-
-@app.route('/favorite/planet', methods=['POST'])
-def new_favorite_planet():
-    data=request.get_json()
-    new_favorite= Planet(data['name'],data ['population'], data['description'] ,data['terrain'] ,data ['climate'])
-    db.session.add(new_favorite)
-    db.session.commit()
-
-    return jsonify(new_favorite.serialize()),200
 
 @app.route('/favorite/vehicle', methods=['POST'])
 def new_favorite_vehicle():
-    data=request.get_json()
-    new_favorite= Vehicle(data['name'],data ['model'], data['description'] ,data['pilot'])
+    data = request.get_json()
+
+    new_favorite= Vehicle(data['name'], data['model'], data['description'], data['pilot'])
+
     db.session.add(new_favorite)
     db.session.commit()
 
-    return jsonify(new_favorite.serialize()),200
-
-
-@app.route('/favorite/<int:id>',methods=['DELETE'])
-def delete_favorite(id):
-    favorite=favorite.query.get(id).first()
-    db.sessionremove(id)
-    db.session.commit()
-
-    return jsonify(favorite.serialize()),201
+    return jsonify(new_favorite.serialize()), 200
 
 
 
 
-@api.route("/signup", methods=["POST"])
+
+# EJEMPLO PARA HACER UN REGISTRO DE USUARIO LLAMANDO A UNA FUNCION QUE ESTÉ EN UN ARCHIVO CONTROLER APARTE
+@app.route("/signup", methods=["POST"])
 def signup_user():
 
     try:
@@ -228,156 +495,15 @@ def signup_user():
         return jsonify(user_response), user_response["code"]
 
 
-@api.route("/users", methods=["GET"])
-def users():
 
-    try:
-
-         # Obtener info de las tablas de la DB
-        users_response = get_users()
-
-        if users_response["code"] != 200:
-            return jsonify(users_response)
-
-        return jsonify(users_response["users"])
-
-    except Exception as error:
-        print(error)
-        return jsonify(users_response), users_response["code"]
-
-@api.route("/carers", methods=["GET"])
-@jwt_required()
-def carers():
-
-    try:
-
-         # Obtener info de las tablas de la DB
-        users_response = get_carers()
-
-        if users_response["code"] != 200:
-            return jsonify(users_response)
-
-        return jsonify(users_response["users_carers"])
-
-    except Exception as error:
-        print(error)
-        return jsonify(users_response), users_response["code"]
-
-
-@api.route("/users/<int:id>", methods=["GET","PUT","DELETE"])
-def users_id(id):
-
-    try:
-
-        # Obtener, actualizar y borrar info de las tablas de la DB
-        if request.method == "PUT":
-            body = request.json
-            user_response = update_user(body, id)
-
-        if request.method == "GET":
-            user_response = get_user(id)
-
-        if request.method == "DELETE":
-            user_response = delete_user(id)
-
-        if user_response["code"] != 200:
-            return jsonify(user_response)
-
-        return jsonify(user_response)
-
-    except Exception as error:
-        print(error)
-        return jsonify(user_response), user_response["code"]
-
-
-###################################################################
-# RUTAS PARA EL REGISTRO DE PERROS Y LAS PETICIONES DE DOG(S)/CRUD DESDE EL FRONT
-@api.route("/signup-dog", methods=["POST"])
-@jwt_required()
-def signup_dog():
-
-    try:
-
-        body = request.json
-
-        # Rellenar la tabla de la DB, con el registro de Perro
-        dog_response = create_dog(body)
-        if dog_response["code"] != 200:
-            return jsonify(dog_response)
-
-        return jsonify(dog_response), 200
-
-    except Exception as error:
-        print(error)
-        return jsonify(dog_response), dog_response["code"]
-
-
-@api.route("/dogs", methods=["GET"])
-def dogs():
-
-    try:
-
-        # Obtener info de las tablas de la DB
-        dogs_response = get_dogs()
-
-        if dogs_response["code"] != 200:
-            return jsonify(dogs_response)
-
-        return jsonify(dogs_response["dogs"])
-
-    except Exception as error:
-        print(error)
-        return jsonify(dogs_response), dogs_response["code"]
-
-
-@api.route("/dogs/<int:id>", methods=["GET","PUT","DELETE"])
-def dogs_id(id):
-
-    try:
-
-        # Obtener, actualizar y borrar info de las tablas de la DB
-        if request.method == "PUT":
-            body = request.json
-            dog_response = update_dog(body, id)
-
-        if request.method == "GET":
-            dog_response = get_dog(id)
-
-        if request.method == "DELETE":
-            dog_response = delete_dog(id)
-
-        if dog_response["code"] != 200:
-            return jsonify(dog_response)
-
-        return jsonify(dog_response)
-
-    except Exception as error:
-        print(error)
-        return jsonify(dog_response), dog_response["code"]
-
-
-
-
-from api.models import db, User
-from flask_jwt_extended import create_access_token, get_jwt_identity
-from api.checks.checks_user import check_user
-
-
-# import requests
-# import json 
-
-
+# ESTA SERIA LA FUNCION QUE ESTARÍA EN EL ARCHIVO CONTROLER APARTE Y QUE HABRÍA QUE IMPORTAR
 def create_user(body):
 
     try:
 
-        # checks_response = check_user(body)
-        # if checks_response["code"] != 200:
-        #     return checks_response["msg"]
-
         claves_user = body.keys()
 
-        if not "email" in claves_user or not "password" in claves_user or not "name" in claves_user or not "lastName" in claves_user or not "address" in claves_user or not "province" in claves_user or not "postalCode" in claves_user or not "phone" in claves_user or not "country" in claves_user or not "birthdate" in claves_user:           # or not "latitude" in claves_user or not "longitude" in claves_user        
+        if not "email" in claves_user or not "password" in claves_user or not "name" in claves_user or not "userName" in claves_user or not "lastName" in claves_user:        
             return {"code": 400, "msg": "¡Información recibida en el Back insuficiente, falta información!"}
 
 
@@ -385,19 +511,10 @@ def create_user(body):
         new_user = User(
             email = body["email"],
             password = body["password"], 
-            name = body["name"], 
-            lastName = body["lastName"], 
-            address = body["address"], 
-            province = body["province"], 
-            postalCode = int(body["postalCode"]), 
-            phone = int(body["phone"]),
-            country = body["country"], 
-            birthdate = body["birthdate"],
-            userPhoto = "https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png",
+            name = body["name"],
+            user_name = body["userName"],
+            last_name = body["lastName"],
             is_active = True)
-
-            # latitude = int(body["latitude"]),
-            # longitude = body["longitude"], 
 
         db.session.add(new_user)
         db.session.commit()
@@ -411,154 +528,9 @@ def create_user(body):
         return {"code": 500, "msg": "¡Error en el servidor, algo fue mal!"}
 
 
-def get_users():
-
-    try:
-        
-        # Obtener usuarios de la base de datos
-        query = db.select(User).order_by(User.id)
-        users = db.session.execute(query).scalars()
-
-        user_list = [user.serialize() for user in users]
-
-        return {"code": 200, "msg": "Usuarios existentes obtenidos", "users": user_list}
-
-    except Exception as error:
-        print(error)
-        return {"code": 500, "msg": "¡Error en el servidor, algo fue mal!"}
 
 
-    # users = db.session.execute(db.select(User.email).order_by(User.id)).scalars()
-    # users = db.session.execute(db.select([User.name, User.email]).order_by(User.id)).scalars()
 
-    # all_users = User.query.all()
-    # # planet_serialized = [planet.serialize() for planet in all_planets] array comprehension
-    # user_serialized = list(map(lambda user: user.serialize(), all_users))
-    # response = {
-    #     "result": {
-    #         "planets": planet_serialized,
-    #         "user": user_serialized
-    #     }
-    # }
-    # return response, 200
-
-
-def get_carers():
-
-    try:
-
-        sub_token = get_jwt_identity()
-        user_id = sub_token["id"]
-        
-        # Obtener usuarios de la base de datos
-        query = db.select(User).order_by(User.id)
-        users = db.session.execute(query).scalars()
-
-        users_carers_list = [user.serialize() for user in users if len(user.tariffs) != 0 ]
-
-        users_carers_list_without_me = [user for user in users_carers_list if user["id"] != user_id ]
-
-        return {"code": 200, "msg": "Usuarios existentes obtenidos", "users_carers": users_carers_list_without_me}
-
-    except Exception as error:
-        print(error)
-        return {"code": 500, "msg": "¡Error en el servidor, algo fue mal!"}
-
-# users_carers_list = list(filter(lambda user.serialize(): len(user.tariffs) != 0, users_carers_list))      # OTRA FORMA DE HACER UN FILTER
-
-
-def get_user(id):
-
-    try:
-    
-        # Obtener usuario de la base de datos
-        user = db.get_or_404(User, id)
-        # user = db.session.execute(db.select(User).filter_by(id)).scalars().one()
-        
-        return {"code": 200, "msg": "Usuario requerido obtenido", "user": user.serialize()}
-
-    except Exception as error:
-        print(error)
-        return {"code": 500, "msg": "¡Error en el servidor, algo fue mal!"}
-
-
-def update_me_user():
-
-    try:
-
-        sub_token = get_jwt_identity()
-        user_id = sub_token["id"]
-    
-        # Obtener usuario de la base de datos
-        user = db.get_or_404(User, user_id)
-
-        access_token = create_access_token(identity=user.serialize())
-        
-        return {"code": 200, "msg": "¡Usuario actualizado correctamente!", "user": user.serialize(), "token": access_token}
-
-    except Exception as error:
-        print(error)
-        return {"code": 500, "msg": "¡Error en el servidor, algo fue mal!"}
-
-
-def update_user(body, id):
-
-    try:
-    
-        # Obtener usuario de la base de datos
-        user = db.get_or_404(User, id)
-
-        claves_user = body.keys()
-
-        if "password" in claves_user:
-            user.password = body["password"]
-
-        if "userPhoto" in claves_user:
-            user.userPhoto = body["userPhoto"]
- 
-        # user.email = body["email"]        # ESTA DISABLED PARA CAMBIAR EN EL FRONT
-        user.name = body["name"]
-        user.lastName = body["lastName"]
-        user.address = body["address"]
-        user.province = body["province"]
-        user.postalCode = int(body["postalCode"])
-        user.phone = int(body["phone"])
-        user.country = body["country"]
-        user.birthdate = body["birthdate"]
-        user.aboutMe = body.get("aboutMe", None)
-        user.is_active = True
-
-        # latitude = int(body["latitude"])
-        # longitude = body["longitude"]
-
-        db.session.commit()
-
-        return {"code": 200, "msg": "¡Datos del usuario actualizados correctamente!", "user": user.serialize()}
-
-    except Exception as error:
-        print(error)
-        return {"code": 500, "msg": "¡Error en el servidor, algo fue mal!"}
-
-
-def delete_user(id):
-
-    try:
-    
-        # Obtener usuarios de la base de datos
-        user = db.get_or_404(User, id)
-
-        db.session.delete(user)
-        db.session.commit()
-
-        # query = db.select(User).order_by(User.id)                 # SI DESPUES NECESITA UNA LISTA COMPLETA ACTUALIZADA
-        # users = db.session.execute(query).scalars()
-
-
-        return {"code": 200, "msg": "¡Usuario eliminado correctamente!"}
-
-    except Exception as error:
-        print(error)
-        return {"code": 500, "msg": "¡Error en el servidor, algo fue mal!"}
 
 
 # this only runs if `$ python src/app.py` is executed
